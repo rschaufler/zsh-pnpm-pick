@@ -69,7 +69,7 @@ Reload: `exec zsh`.
 Source the plugin file directly from `~/.zshrc`:
 
 ```sh
-source /path/to/zsh-pnpm-pick/pnpm-pick.plugin.zsh
+source /path/to/zsh-pnpm-pick/zsh-pnpm-pick.plugin.zsh
 ```
 
 zinit:
