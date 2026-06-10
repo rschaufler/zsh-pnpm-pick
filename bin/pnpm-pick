@@ -1,0 +1,180 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "InquirerPy>=0.3.4",
+#   "PyYAML>=6.0",
+# ]
+# ///
+"""Fuzzy-pick a script in a pnpm workspace.
+
+Walks up from $PWD looking for `pnpm-workspace.yaml`, reads its `packages:`
+globs, collects every `<package, script>` combination, and shows a fuzzy
+picker.
+
+Delivery of the selection depends on `$PNPM_PICK_OUTFILE`:
+  - set   → write `pnpm --filter <pkg> run <script>` to that file and exit.
+            The zsh plugin reads it and loads the command into the prompt
+            (`print -z`) so it stays editable and lands in history.
+  - unset → run the command directly (standalone fallback).
+
+Usage (via the `ppick` shell function, or this script directly):
+    ppick               # fuzzy over all (package, script) pairs
+    ppick dev           # pre-filter to the `dev` script
+    ppick agent         # pre-filter by substring (matches package or script)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+from InquirerPy import inquirer
+
+
+def find_workspace_root(start: Path) -> Path | None:
+    for d in [start, *start.parents]:
+        if (d / "pnpm-workspace.yaml").is_file():
+            return d
+    return None
+
+
+def read_workspace_globs(root: Path) -> list[str]:
+    data = yaml.safe_load((root / "pnpm-workspace.yaml").read_text()) or {}
+    globs = data.get("packages") or []
+    return [g for g in globs if isinstance(g, str) and not g.startswith("!")]
+
+
+def discover_packages(root: Path, globs: list[str]) -> list[tuple[str, Path, dict]]:
+    """Return [(package_name, package_dir, scripts_dict)] for each workspace package."""
+    seen: set[Path] = set()
+    out: list[tuple[str, Path, dict]] = []
+    for pattern in globs:
+        for pkg_json in sorted(root.glob(f"{pattern.rstrip('/')}/package.json")):
+            if pkg_json in seen:
+                continue
+            seen.add(pkg_json)
+            try:
+                data = json.loads(pkg_json.read_text())
+            except json.JSONDecodeError:
+                continue
+            name = data.get("name")
+            if not name:
+                continue
+            scripts = data.get("scripts") or {}
+            if not isinstance(scripts, dict):
+                continue
+            out.append((name, pkg_json.parent, scripts))
+    return out
+
+
+def short_name(pkg_dir: Path, root: Path) -> str:
+    rel = pkg_dir.relative_to(root)
+    return rel.name or str(rel)
+
+
+def build_entries(
+    packages: list[tuple[str, Path, dict]], root: Path
+) -> list[tuple[str, str, str]]:
+    """Return [(display, package_name, script_name)] for every (package, script) pair."""
+    rows: list[tuple[str, str, str, str]] = []
+    for name, pkg_dir, scripts in packages:
+        short = short_name(pkg_dir, root)
+        for script in scripts:
+            rows.append((short, script, name, scripts[script]))
+
+    if not rows:
+        return []
+
+    pkg_w = max(len(r[0]) for r in rows)
+    script_w = max(len(r[1]) for r in rows)
+
+    entries: list[tuple[str, str, str]] = []
+    for short, script, name, cmd in rows:
+        display = f"{short.ljust(pkg_w)}  {script.ljust(script_w)}  {cmd}"
+        entries.append((display, name, script))
+    return entries
+
+
+def filter_entries(
+    entries: list[tuple[str, str, str]], query: str
+) -> list[tuple[str, str, str]]:
+    q = query.strip().lower()
+    if not q:
+        return entries
+    return [e for e in entries if q in e[0].lower()]
+
+
+def deliver(pkg: str, script: str, root: Path) -> int:
+    cmd = f"pnpm --filter {pkg} run {script}"
+    outfile = os.environ.get("PNPM_PICK_OUTFILE")
+    if outfile:
+        Path(outfile).write_text(cmd)
+        return 0
+    print(f"\n→ {cmd}\n", flush=True)
+    return subprocess.call(["pnpm", "--filter", pkg, "run", script], cwd=root)
+
+
+def main() -> int:
+    cwd = Path.cwd().resolve()
+    root = find_workspace_root(cwd)
+    if root is None:
+        print(
+            f"no pnpm-workspace.yaml found at or above {cwd}",
+            file=sys.stderr,
+        )
+        return 1
+
+    globs = read_workspace_globs(root)
+    if not globs:
+        print(f"no `packages:` entries in {root / 'pnpm-workspace.yaml'}", file=sys.stderr)
+        return 1
+
+    packages = discover_packages(root, globs)
+    if not packages:
+        print("no packages found in the workspace", file=sys.stderr)
+        return 1
+
+    entries = build_entries(packages, root)
+    if not entries:
+        print("no scripts defined in any package", file=sys.stderr)
+        return 1
+
+    if len(sys.argv) > 1:
+        entries = filter_entries(entries, " ".join(sys.argv[1:]))
+        if not entries:
+            print(f"no script matches '{' '.join(sys.argv[1:])}'", file=sys.stderr)
+            return 1
+        if len(entries) == 1:
+            _, pkg, script = entries[0]
+            return deliver(pkg, script, root)
+
+    choices = [{"name": display, "value": (pkg, script)} for display, pkg, script in entries]
+
+    try:
+        selection = inquirer.fuzzy(
+            message="Pick a script:",
+            choices=choices,
+            max_height="70%",
+            border=True,
+            instruction="(type to filter, ↑/↓ to move, enter to select)",
+        ).execute()
+    except KeyboardInterrupt:
+        return 130
+
+    if not selection:
+        return 130
+
+    pkg, script = selection
+    return deliver(pkg, script, root)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

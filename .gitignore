@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# uv / python caches
+__pycache__/
+.venv/
