@@ -48,7 +48,7 @@ that does the prompt-fill.
 ### Oh My Zsh
 
 ```sh
-git clone https://github.com/<you>/zsh-pnpm-pick \
+git clone https://github.com/rschaufler/zsh-pnpm-pick \
   "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-pnpm-pick"
 ```
 
@@ -75,13 +75,13 @@ source /path/to/zsh-pnpm-pick/pnpm-pick.plugin.zsh
 zinit:
 
 ```sh
-zinit light <you>/zsh-pnpm-pick
+zinit light rschaufler/zsh-pnpm-pick
 ```
 
 antigen:
 
 ```sh
-antigen bundle <you>/zsh-pnpm-pick
+antigen bundle rschaufler/zsh-pnpm-pick
 ```
 
 ## Usage
