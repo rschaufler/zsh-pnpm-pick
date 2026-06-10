@@ -55,11 +55,12 @@ git clone https://github.com/<you>/zsh-pnpm-pick \
 Then add it to your plugin list in `~/.zshrc`:
 
 ```sh
-plugins=(... pnpm-pick)
+plugins=(... zsh-pnpm-pick)
 ```
 
-> The directory is `zsh-pnpm-pick`; the plugin entry is `pnpm-pick` (the name of
-> the `*.plugin.zsh` file).
+> Oh My Zsh requires the plugin entry, its directory, and the `.plugin.zsh`
+> file to share one name — all three are `zsh-pnpm-pick`. The command it
+> defines is `ppick` (unrelated to the plugin name).
 
 Reload: `exec zsh`.
 
@@ -74,7 +75,6 @@ source /path/to/zsh-pnpm-pick/pnpm-pick.plugin.zsh
 zinit:
 
 ```sh
-zinit ice pick"pnpm-pick.plugin.zsh"
 zinit light <you>/zsh-pnpm-pick
 ```
 
